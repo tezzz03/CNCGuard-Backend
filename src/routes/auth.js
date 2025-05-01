@@ -76,11 +76,13 @@ router.post('/forgot-password', async (req, res) => {
     }
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      // Return success to prevent email enumeration
+      // Prevent email enumeration
       return res.status(200).json({ message: 'If an account exists, a reset link has been sent' });
     }
     const resetToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '15m' });
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+    console.log('Password reset link generated:', resetLink); // For debugging
 
     await sendEmail({
       to: email,
@@ -102,7 +104,8 @@ router.post('/reset-password', async (req, res) => {
     if (!token || !newPassword) {
       return res.status(400).json({ message: 'Token and new password are required' });
     }
-    if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*[0-9]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
       return res.status(400).json({ message: 'New password must be at least 8 characters with letters and numbers' });
     }
 

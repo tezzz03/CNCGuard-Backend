@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
-const { predictRisk } = require('../utils/aiModel');
+const { PythonShell } = require('python-shell');
 const { sendEmail } = require('../utils/email');
 const router = express.Router();
 
@@ -32,19 +32,38 @@ router.post('/', authenticateToken, async (req, res) => {
       Energy_Consumption_kWh: energyConsumption,
     };
 
-    const prediction = await predictRisk(dataPoint);
-    const user = await User.findOne({ where: { id: req.user.userId } });
+    const options = {
+      pythonPath: '/usr/bin/python3.11', // Path confirmed via SSH
+      scriptPath: __dirname + '/ai',
+      pythonOptions: ['-m', 'site', '--user-site'], // Include user-installed packages
+      args: [JSON.stringify(dataPoint)],
+    };
 
-    if (prediction.riskLevel === 'HIGH RISK' && user.notificationEmail) {
-      await sendEmail({
-        to: user.notificationEmail,
-        subject: `CNCGuard Alert: High Risk Detected`,
-        text: `Risk Assessment: ${prediction.riskLevel}\nRisk Probability: ${prediction.riskProbability.toFixed(2)}%\nCritical Parameters: ${prediction.criticalParameters.join(', ') || 'None'}\nRecommendations:\n${prediction.recommendations.join('\n')}`,
-        // Add attachment logic here if report generation is implemented
-      });
-    }
+    PythonShell.run('predict.py', options, async (err, results) => {
+      if (err) {
+        console.error('Python script error:', err);
+        return res.status(500).json({ message: 'Prediction failed', error: err.message });
+      }
 
-    res.json(prediction);
+      try {
+        const prediction = JSON.parse(results[0]);
+        const user = await User.findOne({ where: { id: req.user.userId } });
+
+        if (prediction.riskLevel === 'HIGH RISK' && user.notificationEmail) {
+          await sendEmail({
+            to: user.notificationEmail,
+            subject: `CNCGuard Alert: High Risk Detected`,
+            text: `Risk Assessment: ${prediction.riskLevel}\nRisk Probability: ${prediction.riskProbability.toFixed(2)}%\nCritical Parameters: ${prediction.criticalParameters.join(', ') || 'None'}\nRecommendations:\n${prediction.recommendations.join('\n')}`,
+            // Add attachment logic here if report generation is implemented
+          });
+        }
+
+        res.json(prediction);
+      } catch (parseError) {
+        console.error('Error parsing Python script output:', parseError);
+        res.status(500).json({ message: 'Failed to parse prediction result', error: parseError.message });
+      }
+    });
   } catch (error) {
     console.error('Prediction error:', error);
     res.status(500).json({ message: 'Failed to predict', error: error.message });

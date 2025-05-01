@@ -1,20 +1,30 @@
 const nodemailer = require('nodemailer');
 
 const sendEmail = async ({ to, subject, text }) => {
-  const transporter = nodemailer.createTransport({
-    service: 'SendGrid',
-    auth: {
-      user: 'apikey',
-      pass: process.env.SENDGRID_API_KEY,
-    },
-  });
+  try {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, 
+      auth: {
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASS, 
+      },
+    });
 
-  await transporter.sendMail({
-    from: 'no-reply@cncguard.com',
-    to,
-    subject,
-    text,
-  });
+    const mailOptions = {
+      from: `"CNCGuard" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      text,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Email sent to ${to}`);
+  } catch (error) {
+    console.error('Email sending error:', error);
+    throw new Error('Failed to send email');
+  }
 };
 
 module.exports = { sendEmail };
